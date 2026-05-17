@@ -66,7 +66,7 @@ export interface CitationItem {
   index_node_hash: string
   segment_id: string
   segment_position: number
-  score: number
+  score?: number
   word_count: number
 }
 
@@ -107,7 +107,7 @@ export interface MessageEnd {
   id: string
   metadata: {
     retriever_resources?: CitationItem[]
-    annotation_reply: {
+    annotation_reply?: {
       id: string
       account: {
         id: string

@@ -168,6 +168,7 @@ const handleStream = (
       }
       buffer += decoder.decode(result.value, { stream: true })
       const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
       try {
         lines.forEach((message) => {
           if (message.startsWith('data: ')) { // check if it starts with data:
@@ -228,7 +229,6 @@ const handleStream = (
             }
           }
         })
-        buffer = lines[lines.length - 1]
       }
       catch (e) {
         onData('', false, {
@@ -368,10 +368,14 @@ export const ssePost = (
     onNodeStarted,
     onNodeFinished,
     onError,
+    getAbortController,
   }: IOtherOptions,
 ) => {
+  const abortController = new AbortController()
+  getAbortController?.(abortController)
   const options = Object.assign({}, baseOptions, {
     method: 'POST',
+    signal: abortController.signal,
   }, fetchOptions)
 
   const urlPrefix = API_PREFIX
@@ -398,8 +402,8 @@ export const ssePost = (
           return
         }
         onData?.(str, isFirstMessage, moreInfo)
-      }, () => {
-        onCompleted?.()
+      }, (hasError?: boolean) => {
+        onCompleted?.(hasError)
       }, onThought, onMessageEnd, onMessageReplace, onFile, onWorkflowStarted, onWorkflowFinished, onNodeStarted, onNodeFinished)
     })
     .catch((e) => {

@@ -9,6 +9,7 @@ import { i18n } from '.'
 export const getLocaleOnServer = async (): Promise<Locale> => {
   // @ts-expect-error locales are readonly
   const locales: string[] = i18n.locales
+  const defaultLocale = i18n.defaultLocale as Locale
 
   let languages: string[] | undefined
   // get locale from cookie
@@ -25,6 +26,19 @@ export const getLocaleOnServer = async (): Promise<Locale> => {
   }
 
   // match locale
-  const matchedLocale = match(languages, locales, i18n.defaultLocale) as Locale
-  return matchedLocale
+  try {
+    const validLanguages = languages.filter((language) => {
+      try {
+        Intl.getCanonicalLocales(language)
+        return true
+      }
+      catch {
+        return false
+      }
+    })
+    return match(validLanguages, locales, defaultLocale) as Locale
+  }
+  catch {
+    return defaultLocale
+  }
 }

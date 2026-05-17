@@ -27,8 +27,28 @@ import { useToastContext } from '@/app/components/base/toast'
 import { TransferMethod } from '@/types/app'
 import { formatFileSize } from '@/utils/format'
 
-const uploadRemoteFileInfo = () => {
-  console.log('TODO')
+const uploadRemoteFileInfo = async (url: string) => {
+  const parsed = new URL(url)
+  const name = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname)
+  let mime_type = ''
+  let size = 0
+
+  try {
+    const res = await fetch(url, { method: 'HEAD' })
+    mime_type = res.headers.get('content-type')?.split(';')[0] || ''
+    size = Number(res.headers.get('content-length') || 0)
+  }
+  catch {
+    // Some file hosts block HEAD. Keep the URL usable and validate what can be inferred locally.
+  }
+
+  return {
+    id: url,
+    name,
+    mime_type,
+    size,
+    url,
+  }
 }
 
 export const useFileSizeLimit = (fileUploadConfig?: FileUploadConfigResponse) => {
@@ -218,7 +238,7 @@ export const useFile = (fileConfig: FileUpload) => {
     handleAddFile(uploadingFile)
     startProgressTimer(uploadingFile.id)
 
-    uploadRemoteFileInfo(url, !!params.token).then((res) => {
+    uploadRemoteFileInfo(url).then((res) => {
       const newFile = {
         ...uploadingFile,
         type: res.mime_type,

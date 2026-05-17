@@ -6,32 +6,52 @@ import produce, { setAutoFreeze } from 'immer'
 import { useBoolean, useGetState } from 'ahooks'
 import useConversation from '@/hooks/use-conversation'
 import Toast from '@/app/components/base/toast'
-import Sidebar from '@/app/components/sidebar'
-import ConfigSence from '@/app/components/config-scence'
-import Header from '@/app/components/header'
 import { fetchAppParams, fetchChatList, fetchConversations, generationConversationName, sendChatMessage, updateFeedback } from '@/service'
-import type { ChatItem, ConversationItem, Feedbacktype, PromptConfig, VisionFile, VisionSettings } from '@/types/app'
-import type { FileUpload } from '@/app/components/base/file-uploader-in-attachment/types'
-import { Resolution, TransferMethod, WorkflowRunningStatus } from '@/types/app'
-import Chat from '@/app/components/chat'
+import type { ChatItem, ConversationItem, Feedbacktype, PromptConfig, VisionFile } from '@/types/app'
+import { TransferMethod, WorkflowRunningStatus } from '@/types/app'
 import { setLocaleOnClient } from '@/i18n/client'
-import useBreakpoints, { MediaType } from '@/hooks/use-breakpoints'
 import Loading from '@/app/components/base/loading'
 import { replaceVarWithValues, userInputsFormToPromptVariables } from '@/utils/prompt'
 import AppUnavailable from '@/app/components/app-unavailable'
 import { API_KEY, APP_ID, APP_INFO, isShowPrompt, promptTemplate } from '@/config'
 import type { Annotation as AnnotationType } from '@/types/log'
 import { addFileInfos, sortAgentSorts } from '@/utils/tools'
+import TerraMindChat from '@/app/components/terramind-chat'
+import TerraMindShell from '@/app/components/terramind-shell'
+import { getCachedChatList, setCachedChatList } from '@/utils/chat-cache'
 
 export interface IMainProps {
   params: any
 }
 
+const normalizeCitations = (value: any): ChatItem['citation'] => {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const seen = new Set<string>()
+  return value
+    .filter(item => item && (item.content || item.document_name || item.dataset_name))
+    .map((item, idx) => ({
+      ...item,
+      content: String(item.content || '').trim(),
+      document_name: item.document_name || item.document?.name || item.file_name || '',
+      dataset_name: item.dataset_name || item.dataset?.name || '',
+      segment_position: typeof item.segment_position === 'number' ? item.segment_position : idx + 1,
+      score: typeof item.score === 'number' ? item.score : undefined,
+    }))
+    .filter((item) => {
+      const key = `${item.document_id || item.document_name}:${item.segment_id || item.segment_position}:${item.content}`
+      if (seen.has(key)) {
+        return false
+      }
+      seen.add(key)
+      return true
+    })
+}
+
 const Main: FC<IMainProps> = () => {
   const { t } = useTranslation()
-  const media = useBreakpoints()
-  const isMobile = media === MediaType.mobile
-  const hasSetAppConfig = APP_ID && API_KEY
 
   /*
   * app info
@@ -40,15 +60,6 @@ const Main: FC<IMainProps> = () => {
   const [isUnknownReason, setIsUnknownReason] = useState<boolean>(false)
   const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null)
   const [inited, setInited] = useState<boolean>(false)
-  // in mobile, show sidebar by click button
-  const [isShowSidebar, { setTrue: showSidebar, setFalse: hideSidebar }] = useBoolean(false)
-  const [visionConfig, setVisionConfig] = useState<VisionSettings | undefined>({
-    enabled: false,
-    number_limits: 2,
-    detail: Resolution.low,
-    transfer_methods: [TransferMethod.local_file],
-  })
-  const [fileConfig, setFileConfig] = useState<FileUpload | undefined>()
 
   useEffect(() => {
     if (APP_INFO?.title) { document.title = `${APP_INFO.title} - Powered by Dify` }
@@ -126,6 +137,9 @@ const Main: FC<IMainProps> = () => {
 
     // update chat list of current conversation
     if (!isNewConversation && !conversationIdChangeBecauseOfNew && !isResponding) {
+      // Show cached history immediately, then refresh it in the background.
+      const cached = getCachedChatList(APP_ID, currConversationId)
+      if (cached && cached.length) { setChatList(cached) }
       fetchChatList(currConversationId).then((res: any) => {
         const { data } = res
         const newChatList: ChatItem[] = generateNewChatListWithOpenStatement(notSyncToStateIntroduction, notSyncToStateInputs)
@@ -141,6 +155,7 @@ const Main: FC<IMainProps> = () => {
           newChatList.push({
             id: item.id,
             content: item.answer,
+            citation: normalizeCitations(item.retriever_resources || item.metadata?.retriever_resources),
             agent_thoughts: addFileInfos(item.agent_thoughts ? sortAgentSorts(item.agent_thoughts) : item.agent_thoughts, item.message_files),
             feedback: item.feedback,
             isAnswer: true,
@@ -148,6 +163,7 @@ const Main: FC<IMainProps> = () => {
           })
         })
         setChatList(newChatList)
+        setCachedChatList(APP_ID, currConversationId, newChatList)
       })
     }
 
@@ -165,7 +181,6 @@ const Main: FC<IMainProps> = () => {
     }
     // trigger handleConversationSwitch
     setCurrConversationId(id, APP_ID)
-    hideSidebar()
   }
 
   /*
@@ -222,10 +237,6 @@ const Main: FC<IMainProps> = () => {
 
   // init
   useEffect(() => {
-    if (!hasSetAppConfig) {
-      setAppUnavailable(true)
-      return
-    }
     (async () => {
       try {
         const [conversationData, appParams] = await Promise.all([fetchConversations(), fetchAppParams()])
@@ -241,7 +252,7 @@ const Main: FC<IMainProps> = () => {
         const isNotNewConversation = !!currentConversation
 
         // fetch new conversation info
-        const { user_input_form, opening_statement: introduction, file_upload, system_parameters, suggested_questions = [] }: any = appParams
+        const { user_input_form, opening_statement: introduction, suggested_questions = [] }: any = appParams
         setLocaleOnClient(APP_INFO.default_language, true)
         setNewConversationInfo({
           name: t('app.chat.newChatDefaultName'),
@@ -260,20 +271,6 @@ const Main: FC<IMainProps> = () => {
           prompt_template: promptTemplate,
           prompt_variables,
         } as PromptConfig)
-        const outerFileUploadEnabled = !!file_upload?.enabled
-        setVisionConfig({
-          ...file_upload?.image,
-          enabled: !!(outerFileUploadEnabled && file_upload?.image?.enabled),
-          image_file_size_limit: system_parameters?.system_parameters || 0,
-        })
-        setFileConfig({
-          enabled: outerFileUploadEnabled,
-          allowed_file_types: file_upload?.allowed_file_types,
-          allowed_file_extensions: file_upload?.allowed_file_extensions,
-          allowed_file_upload_methods: file_upload?.allowed_file_upload_methods,
-          number_limits: file_upload?.number_limits,
-          fileUploadConfig: file_upload?.fileUploadConfig,
-        })
         setConversationList(conversations as ConversationItem[])
 
         if (isNotNewConversation) { setCurrConversationId(_conversationId, APP_ID, false) }
@@ -281,6 +278,7 @@ const Main: FC<IMainProps> = () => {
         setInited(true)
       }
       catch (e: any) {
+        // Treat the app as unavailable only when the actual request fails.
         if (e.status === 404) {
           setAppUnavailable(true)
         }
@@ -293,7 +291,6 @@ const Main: FC<IMainProps> = () => {
   }, [])
 
   const [isResponding, { setTrue: setRespondingTrue, setFalse: setRespondingFalse }] = useBoolean(false)
-  const [abortController, setAbortController] = useState<AbortController | null>(null)
   const { notify } = Toast
   const logError = (message: string) => {
     notify({ type: 'error', message })
@@ -315,12 +312,8 @@ const Main: FC<IMainProps> = () => {
     return true
   }
 
-  const [controlFocus, setControlFocus] = useState(0)
-  const [openingSuggestedQuestions, setOpeningSuggestedQuestions] = useState<string[]>([])
   const [messageTaskId, setMessageTaskId] = useState('')
-  const [hasStopResponded, setHasStopResponded, getHasStopResponded] = useGetState(false)
-  const [isRespondingConIsCurrCon, setIsRespondingConCurrCon, getIsRespondingConIsCurrCon] = useGetState(true)
-  const [userQuery, setUserQuery] = useState('')
+  const [, setIsRespondingConCurrCon] = useGetState(true)
 
   const updateCurrentQA = ({
     responseItem,
@@ -350,7 +343,7 @@ const Main: FC<IMainProps> = () => {
       type: 'image',
       transfer_method: fileItem.transferMethod,
       url: fileItem.url,
-      upload_file_id: fileItem.id,
+      upload_file_id: fileItem.transferMethod === TransferMethod.local_file ? fileItem.uploadedId || fileItem.id : '',
     }
   }
 
@@ -399,13 +392,8 @@ const Main: FC<IMainProps> = () => {
     }
 
     const placeholderAnswerId = `answer-placeholder-${Date.now()}`
-    const placeholderAnswerItem = {
-      id: placeholderAnswerId,
-      content: '',
-      isAnswer: true,
-    }
 
-    const newList = [...getChatList(), questionItem, placeholderAnswerItem]
+    const newList = [...getChatList(), questionItem]
     setChatList(newList)
 
     let isAgentMode = false
@@ -425,9 +413,6 @@ const Main: FC<IMainProps> = () => {
 
     setRespondingTrue()
     sendChatMessage(data, {
-      getAbortController: (abortController) => {
-        setAbortController(abortController)
-      },
       onData: (message: string, isFirstMessage: boolean, { conversationId: newConversationId, messageId, taskId }: any) => {
         if (!isAgentMode) {
           responseItem.content = responseItem.content + message
@@ -457,7 +442,10 @@ const Main: FC<IMainProps> = () => {
         })
       },
       async onCompleted(hasError?: boolean) {
-        if (hasError) { return }
+        if (hasError) {
+          setRespondingFalse()
+          return
+        }
 
         if (getConversationIdChangeBecauseOfNew()) {
           const { data: allConversations }: any = await fetchConversations()
@@ -471,7 +459,9 @@ const Main: FC<IMainProps> = () => {
         setConversationIdChangeBecauseOfNew(false)
         resetNewConversationInputs()
         setChatNotStarted()
-        setCurrConversationId(tempNewConversationId, APP_ID, true)
+        if (tempNewConversationId) {
+          setCurrConversationId(tempNewConversationId, APP_ID, true)
+        }
         setRespondingFalse()
       },
       onFile(file) {
@@ -522,27 +512,19 @@ const Main: FC<IMainProps> = () => {
         })
       },
       onMessageEnd: (messageEnd) => {
+        const citations = normalizeCitations(messageEnd.metadata?.retriever_resources)
+        if (citations?.length) {
+          responseItem.citation = citations
+        }
+
         if (messageEnd.metadata?.annotation_reply) {
           responseItem.id = messageEnd.id
           responseItem.annotation = ({
             id: messageEnd.metadata.annotation_reply.id,
             authorName: messageEnd.metadata.annotation_reply.account.name,
           } as AnnotationType)
-          const newListWithAnswer = produce(
-            getChatList().filter(item => item.id !== responseItem.id && item.id !== placeholderAnswerId),
-            (draft) => {
-              if (!draft.find(item => item.id === questionId)) { draft.push({ ...questionItem }) }
-
-              draft.push({
-                ...responseItem,
-              })
-            },
-          )
-          setChatList(newListWithAnswer)
-          return
         }
-        // not support show citation
-        // responseItem.citation = messageEnd.retriever_resources
+
         const newListWithAnswer = produce(
           getChatList().filter(item => item.id !== responseItem.id && item.id !== placeholderAnswerId),
           (draft) => {
@@ -552,6 +534,9 @@ const Main: FC<IMainProps> = () => {
           },
         )
         setChatList(newListWithAnswer)
+        // Persist the current conversation so history remains visible after refresh.
+        const cid = tempNewConversationId || (isNewConversation ? '' : currConversationId)
+        if (cid) { setCachedChatList(APP_ID, cid, newListWithAnswer) }
       },
       onMessageReplace: (messageReplace) => {
         setChatList(produce(
@@ -565,9 +550,12 @@ const Main: FC<IMainProps> = () => {
       },
       onError() {
         setRespondingFalse()
-        // role back placeholder answer
+        // roll back placeholder answer
         setChatList(produce(getChatList(), (draft) => {
-          draft.splice(draft.findIndex(item => item.id === placeholderAnswerId), 1)
+          const index = draft.findIndex(item => item.id === placeholderAnswerId)
+          if (index > -1) {
+            draft.splice(index, 1)
+          }
         }))
       },
       onWorkflowStarted: ({ workflow_run_id, task_id }) => {
@@ -634,70 +622,43 @@ const Main: FC<IMainProps> = () => {
     notify({ type: 'success', message: t('common.api.success') })
   }
 
-  const renderSidebar = () => {
-    if (!APP_ID || !APP_INFO || !promptConfig) { return null }
+  if (appUnavailable) {
     return (
-      <Sidebar
-        list={conversationList}
-        onCurrentIdChange={handleConversationIdChange}
-        currentId={currConversationId}
-        copyRight={APP_INFO.copyright || APP_INFO.title}
+      <AppUnavailable
+        isUnknownReason={isUnknownReason}
+        errMessage={!APP_ID || !API_KEY ? 'Please set APP_ID and API_KEY in .env.local' : ''}
       />
     )
   }
 
-  if (appUnavailable) { return <AppUnavailable isUnknownReason={isUnknownReason} errMessage={!hasSetAppConfig ? 'Please set APP_ID and API_KEY in config/index.tsx' : ''} /> }
-
   if (!APP_ID || !APP_INFO || !promptConfig) { return <Loading type='app' /> }
+  const displayAppTitle = APP_INFO.title === 'Chat APP' ? 'Cabiner' : APP_INFO.title || 'Cabiner'
 
   return (
-    <div className='bg-gray-100'>
-      <Header
-        title={APP_INFO.title}
-        isMobile={isMobile}
-        onShowSideBar={showSidebar}
+    <div className="h-screen w-screen overflow-hidden" ref={chatListDomRef}>
+      <TerraMindShell
+        appTitle={displayAppTitle}
+        conversations={conversationList}
+        currentConversationId={currConversationId}
         onCreateNewChat={() => handleConversationIdChange('-1')}
-      />
-      <div className="flex rounded-t-2xl bg-white overflow-hidden">
-        {/* sidebar */}
-        {!isMobile && renderSidebar()}
-        {isMobile && isShowSidebar && (
-          <div className='fixed inset-0 z-50' style={{ backgroundColor: 'rgba(35, 56, 118, 0.2)' }} onClick={hideSidebar} >
-            <div className='inline-block' onClick={e => e.stopPropagation()}>
-              {renderSidebar()}
-            </div>
-          </div>
-        )}
-        {/* main */}
-        <div className='flex-grow flex flex-col h-[calc(100vh_-_3rem)] overflow-y-auto'>
-          <ConfigSence
-            conversationName={conversationName}
-            hasSetInputs={hasSetInputs}
-            isPublicVersion={isShowPrompt}
-            siteInfo={APP_INFO}
-            promptConfig={promptConfig}
-            onStartChat={handleStartChat}
-            canEditInputs={canEditInputs}
-            savedInputs={currInputs as Record<string, any>}
-            onInputsChange={setCurrInputs}
-          ></ConfigSence>
-
-          {
-            hasSetInputs && (
-              <div className='relative grow pc:w-[794px] max-w-full mobile:w-full pb-[180px] mx-auto mb-3.5' ref={chatListDomRef}>
-                <Chat
-                  chatList={chatList}
-                  onSend={handleSend}
-                  onFeedback={handleFeedback}
-                  isResponding={isResponding}
-                  checkCanSend={checkCanSend}
-                  visionConfig={visionConfig}
-                  fileConfig={fileConfig}
-                />
-              </div>)
-          }
-        </div>
-      </div>
+        onSelectConversation={handleConversationIdChange}
+      >
+        <TerraMindChat
+          chatList={chatList}
+          isResponding={isResponding}
+          suggestedPrompts={(currConversationInfo?.suggested_questions || []).slice(0, 3).map(q => ({
+            title: 'Suggested question',
+            desc: q,
+            prompt: q,
+          }))}
+          onSend={(message) => {
+            if (!checkCanSend()) {
+              return
+            }
+            void handleSend(message)
+          }}
+        />
+      </TerraMindShell>
     </div>
   )
 }

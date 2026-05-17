@@ -1,6 +1,7 @@
 import type { Annotation } from './log'
 import type { Locale } from '@/i18n'
 import type { ThoughtItem } from '@/app/components/chat/type'
+import type { CitationItem } from '@/app/components/chat/type'
 
 export interface PromptVariable {
   key: string
@@ -94,6 +95,7 @@ export type ChatItem = IChatItem & {
   isError?: boolean
   workflow_run_id?: string
   workflowProcess?: WorkflowProcess
+  citation?: CitationItem[]
 }
 
 export interface ResponseHolder {}
