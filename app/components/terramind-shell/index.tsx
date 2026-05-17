@@ -3,6 +3,7 @@
 import type { FC } from 'react'
 import React, { useMemo, useState } from 'react'
 import {
+  RiAddLine,
   RiChat3Line,
   RiCompassLine,
   RiFootprintLine,
@@ -37,7 +38,7 @@ const TerraMindShell: FC<TerraMindShellProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const displayConversations = useMemo(() => {
-    return conversations.slice(0, 20)
+    return conversations.filter(item => item.id !== '-1').slice(0, 20)
   }, [conversations])
 
   const handleCreateNewChat = () => {
@@ -51,7 +52,7 @@ const TerraMindShell: FC<TerraMindShellProps> = ({
   }
 
   const menuItems = [
-    { label: 'Home', Icon: RiHome5Line, active: true, onClick: handleCreateNewChat },
+    { label: 'Home', Icon: RiHome5Line, active: currentConversationId === '-1', onClick: handleCreateNewChat },
     { label: 'Explore', Icon: RiCompassLine, comingSoon: true },
     { label: 'Trails', Icon: RiFootprintLine, comingSoon: true },
     { label: 'Cabins', Icon: RiTentLine, comingSoon: true },
@@ -104,6 +105,16 @@ const TerraMindShell: FC<TerraMindShellProps> = ({
 
             <div className={s.navSection}>
               <div className={s.sectionTitle}>Recent</div>
+              <button
+                type="button"
+                className={`${s.newChatButton} ${currentConversationId === '-1' ? s.newChatButtonActive : ''}`}
+                onClick={handleCreateNewChat}
+                title="Start a new chat"
+              >
+                <RiAddLine size={20} aria-hidden="true" />
+                <span className={s.newChatLabel}>New chat</span>
+                <span className={s.navTooltip}>New chat</span>
+              </button>
               {displayConversations.map((c) => {
                 const active = c.id === currentConversationId
                 return (

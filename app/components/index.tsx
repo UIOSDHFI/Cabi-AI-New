@@ -116,31 +116,34 @@ const Main: FC<IMainProps> = () => {
   const handleConversationSwitch = () => {
     if (!inited) { return }
 
+    const selectedConversationId = currConversationId
+    if (isNewConversation) {
+      setChatList(generateNewChatListWithOpenStatement('', newConversationInputs))
+      return
+    }
+
     // update inputs of current conversation
     let notSyncToStateIntroduction = ''
     let notSyncToStateInputs: Record<string, any> | undefined | null = {}
-    if (!isNewConversation) {
-      const item = conversationList.find(item => item.id === currConversationId)
-      notSyncToStateInputs = item?.inputs || {}
-      setCurrInputs(notSyncToStateInputs as any)
-      notSyncToStateIntroduction = item?.introduction || ''
-      setExistConversationInfo({
-        name: item?.name || '',
-        introduction: notSyncToStateIntroduction,
-        suggested_questions: suggestedQuestions,
-      })
-    }
-    else {
-      notSyncToStateInputs = newConversationInputs
-      setCurrInputs(notSyncToStateInputs)
-    }
+    const item = conversationList.find(item => item.id === selectedConversationId)
+    notSyncToStateInputs = item?.inputs || {}
+    setCurrInputs(notSyncToStateInputs as any)
+    notSyncToStateIntroduction = item?.introduction || ''
+    setExistConversationInfo({
+      name: item?.name || '',
+      introduction: notSyncToStateIntroduction,
+      suggested_questions: item?.suggested_questions || suggestedQuestions,
+    })
 
     // update chat list of current conversation
-    if (!isNewConversation && !conversationIdChangeBecauseOfNew && !isResponding) {
+    if (!conversationIdChangeBecauseOfNew && !isResponding) {
       // Show cached history immediately, then refresh it in the background.
-      const cached = getCachedChatList(APP_ID, currConversationId)
+      const cached = getCachedChatList(APP_ID, selectedConversationId)
       if (cached && cached.length) { setChatList(cached) }
-      fetchChatList(currConversationId).then((res: any) => {
+      else { setChatList(generateNewChatListWithOpenStatement(notSyncToStateIntroduction, notSyncToStateInputs)) }
+
+      fetchChatList(selectedConversationId).then((res: any) => {
+        if (getCurrConversationId() !== selectedConversationId) { return }
         const { data } = res
         const newChatList: ChatItem[] = generateNewChatListWithOpenStatement(notSyncToStateIntroduction, notSyncToStateInputs)
 
@@ -163,11 +166,9 @@ const Main: FC<IMainProps> = () => {
           })
         })
         setChatList(newChatList)
-        setCachedChatList(APP_ID, currConversationId, newChatList)
+        setCachedChatList(APP_ID, selectedConversationId, newChatList)
       })
     }
-
-    if (isNewConversation && isChatStarted) { setChatList(generateNewChatListWithOpenStatement()) }
   }
   useEffect(handleConversationSwitch, [currConversationId, inited])
 
@@ -175,6 +176,8 @@ const Main: FC<IMainProps> = () => {
     if (id === '-1') {
       createNewChat()
       setConversationIdChangeBecauseOfNew(true)
+      setChatNotStarted()
+      setChatList(generateNewChatListWithOpenStatement('', newConversationInputs))
     }
     else {
       setConversationIdChangeBecauseOfNew(false)
@@ -447,20 +450,23 @@ const Main: FC<IMainProps> = () => {
           return
         }
 
+        let completedConversationId = tempNewConversationId
         if (getConversationIdChangeBecauseOfNew()) {
           const { data: allConversations }: any = await fetchConversations()
-          const newItem: any = await generationConversationName(allConversations[0].id)
+          completedConversationId = completedConversationId || allConversations?.[0]?.id || ''
+          const newItem: any = completedConversationId ? await generationConversationName(completedConversationId) : null
 
           const newAllConversations = produce(allConversations, (draft: any) => {
-            draft[0].name = newItem.name
+            const target = draft.find((item: ConversationItem) => item.id === completedConversationId) || draft[0]
+            if (target && newItem?.name) { target.name = newItem.name }
           })
           setConversationList(newAllConversations as any)
         }
         setConversationIdChangeBecauseOfNew(false)
         resetNewConversationInputs()
         setChatNotStarted()
-        if (tempNewConversationId) {
-          setCurrConversationId(tempNewConversationId, APP_ID, true)
+        if (completedConversationId) {
+          setCurrConversationId(completedConversationId, APP_ID, true)
         }
         setRespondingFalse()
       },
@@ -512,6 +518,8 @@ const Main: FC<IMainProps> = () => {
         })
       },
       onMessageEnd: (messageEnd) => {
+        const endedConversationId = (messageEnd as any).conversation_id
+        if (!tempNewConversationId && endedConversationId) { tempNewConversationId = endedConversationId }
         const citations = normalizeCitations(messageEnd.metadata?.retriever_resources)
         if (citations?.length) {
           responseItem.citation = citations
@@ -646,11 +654,6 @@ const Main: FC<IMainProps> = () => {
         <TerraMindChat
           chatList={chatList}
           isResponding={isResponding}
-          suggestedPrompts={(currConversationInfo?.suggested_questions || []).slice(0, 3).map(q => ({
-            title: 'Suggested question',
-            desc: q,
-            prompt: q,
-          }))}
           onSend={(message) => {
             if (!checkCanSend()) {
               return

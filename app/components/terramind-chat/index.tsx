@@ -81,19 +81,19 @@ const TerraMindChat: FC<TerraMindChatProps> = ({
 
     return [
       {
-        title: 'Plan a 3-day trip',
-        desc: 'Generate route ideas by destination and difficulty.',
-        prompt: 'Help me plan a 3-day hiking and camping trip, including the route, supplies, and risk reminders.',
+        title: 'EV Charging',
+        desc: 'Charging station availability by location.',
+        prompt: 'Are there charging stations for electric cars at every location?',
       },
       {
-        title: 'Gear checklist',
-        desc: 'Lightweight packing and must-have items.',
-        prompt: 'Create a lightweight summer hiking gear checklist and group items by required and optional.',
+        title: 'Horsterwold Packing',
+        desc: 'What to bring for the floating cabin.',
+        prompt: 'What should I bring for the Horsterwold cabin?',
       },
       {
-        title: 'Safety and weather',
-        desc: 'Risk assessment and response planning.',
-        prompt: 'I am preparing for a hike. How should I assess weather and risks? Give me a pre-departure checklist.',
+        title: 'Dogs Allowed',
+        desc: 'Pet policy across cabin stays.',
+        prompt: 'Are dogs allowed at the cabins?',
       },
     ] satisfies TerraMindSuggestedPrompt[]
   }, [suggestedPrompts])

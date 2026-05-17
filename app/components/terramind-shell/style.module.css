@@ -289,6 +289,62 @@
   flex-shrink: 0;
 }
 
+.newChatButton {
+  width: 100%;
+  border: 1px solid rgba(45, 106, 79, 0.12);
+  background: rgba(237, 244, 242, 0.84);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 150ms var(--ease-out);
+  position: relative;
+  color: var(--forest-deep);
+  margin-bottom: 8px;
+  text-align: left;
+  font: inherit;
+  font-weight: 800;
+}
+
+.newChatButton:hover,
+.newChatButtonActive {
+  background: rgba(116, 198, 157, 0.20);
+  border-color: rgba(45, 106, 79, 0.22);
+  box-shadow: 0 6px 16px rgba(27, 67, 50, 0.08);
+}
+
+.newChatButton:focus-visible {
+  outline: 3px solid rgba(64, 145, 108, 0.20);
+  outline-offset: 2px;
+}
+
+.newChatLabel {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarCollapsed .newChatButton {
+  width: 48px;
+  height: 48px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border-radius: 14px;
+  margin: 0 auto 8px;
+}
+
+.sidebarCollapsed .newChatLabel {
+  width: 0;
+  flex: 0;
+  opacity: 0;
+}
+
 .navItemActive {
   background: var(--fog);
   color: var(--forest-deep);
@@ -364,7 +420,8 @@
   border-right-color: var(--slate-dark);
 }
 
-.sidebarCollapsed .navItem:hover .navTooltip {
+.sidebarCollapsed .navItem:hover .navTooltip,
+.sidebarCollapsed .newChatButton:hover .navTooltip {
   opacity: 1;
   visibility: visible;
 }
@@ -576,6 +633,7 @@
   .sidebar,
   .main,
   .navItem,
+  .newChatButton,
   .toggleBtn,
   .logoText,
   .navLabel,
